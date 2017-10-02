@@ -40,11 +40,17 @@
 #include <time.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
 
 #define N 100000
 #define CNTRLD_EXIT 10
-#define RECOVERY_FAILED 20
-#define DATA_CORRUPT 30
+#define INIT_FAILED 20
+#define RECOVERY_FAILED 30
+#define PROTECT_FAILED 40
+#define PROTECT_FAILED_AFTER_RAISE 50
+#define DATA_CORRUPT 60
+#define TEST_FAILED 70
 #define KEEP 2
 #define RESTART 1
 #define INIT 0
@@ -125,23 +131,48 @@ int read_data(double* B_chk, size_t* asize_chk, int rank, size_t asize);
 
 int main(int argc, char* argv[]) {
 
-    unsigned char parity, crash, level, state, diff_sizes;
-    int FTI_APP_RANK, result, tmp, success = 1;
+    int FTI_APP_RANK, MPI_RANK; 
+    unsigned char parity, crash, level, state, diff_sizes, var_size;
+    int result, tmp, success = 1, perr = 0;
     double *A, *B, *B_chk;
+    char *errormsg;
 
     size_t asize, asize_chk;
-
+    
     srand(time(NULL));
 
     MPI_Init(&argc, &argv);
-    FTI_Init(argv[1], MPI_COMM_WORLD);
+    MPI_Comm_rank(MPI_COMM_WORLD, &MPI_RANK);
+    
+    if (argc < 6) {
+        if( MPI_RANK == 0 ) {
+            fprintf(stderr, "\n\t usage: check.exe configFile isCrash ckptLevel isDiffSizes isVarSizes\n\n");
+            exit(TEST_FAILED);
+        }
+    }
+    
+    MPI_Barrier(MPI_COMM_WORLD);    
 
+// INITIALIZE FTI
+    perr = FTI_Init(argv[1], MPI_COMM_WORLD);
+    if (perr != 0) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fprintf(stderr,"[ERROR rank - %i] FTI failed to initialize :: %s\n", MPI_RANK,  errormsg);
+        MPI_Abort(MPI_COMM_WORLD, INIT_FAILED);
+    }     
+    
+    MPI_Comm_rank(FTI_COMM_WORLD, &FTI_APP_RANK);
+
+// REQUEST PARAMETER
     crash = atoi(argv[2]);
     level = atoi(argv[3]);
     diff_sizes = atoi(argv[4]);
+    var_size = atoi(argv[5]);
+    
 
-    MPI_Comm_rank(FTI_COMM_WORLD,&FTI_APP_RANK);
-
+// SET ARRAY LENGTHS FOR EACH RANK
     asize = N;
 
     if (diff_sizes) {
@@ -183,13 +214,57 @@ int main(int argc, char* argv[]) {
     A = (double*) malloc(asize*sizeof(double));
     B = (double*) malloc(asize*sizeof(double));
 
-    FTI_Protect(0, A, asize, FTI_DBLE);
-    FTI_Protect(1, B, asize, FTI_DBLE);
-    FTI_Protect(2, &asize, 1, FTI_INTG);
+// PROTECT THE VARIABLES
+    perr = FTI_Protect(0, A, asize, FTI_DBLE);
+    if (perr != 0) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fprintf(stderr,"[ERROR rank - %i] FTI failed to protect a variable :: %s\n", FTI_APP_RANK,  errormsg);
+        MPI_Abort(MPI_COMM_WORLD, PROTECT_FAILED);
+    }     
+    perr = FTI_Protect(1, B, asize, FTI_DBLE);
+    if (perr != 0) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fprintf(stderr,"[ERROR rank - %i] FTI failed to protect a variable :: %s\n", FTI_APP_RANK,  errormsg);
+        MPI_Abort(MPI_COMM_WORLD, PROTECT_FAILED);
+    }     
+    perr = FTI_Protect(2, &asize, 1, FTI_INTG);
+    if (perr != 0) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fprintf(stderr,"[ERROR rank - %i] FTI failed to protect a variable :: %s\n", FTI_APP_RANK,  errormsg);
+        MPI_Abort(MPI_COMM_WORLD, PROTECT_FAILED);
+    }     
 
     state = FTI_Status();
 
+// IF FTI STARTS CLEAN
     if (state == INIT) {
+        if (var_size == 1) {
+            asize *= 2; 
+            A = (double*) malloc(asize*sizeof(double)); 
+            B = (double*) malloc(asize*sizeof(double));
+            FTI_Protect(0, A, asize, FTI_DBLE);
+            if (perr != 0) {
+                perr = errno;
+                errormsg = strerror(perr);
+                perr = 0;
+                fprintf(stderr,"[ERROR rank - %i] FTI failed to protect a variable after increased the size :: %s\n", FTI_APP_RANK,  errormsg);
+                MPI_Abort(MPI_COMM_WORLD, PROTECT_FAILED_AFTER_RAISE);
+            }     
+            FTI_Protect(1, B, asize, FTI_DBLE);
+            if (perr != 0) {
+                perr = errno;
+                errormsg = strerror(perr);
+                perr = 0;
+                fprintf(stderr,"[ERROR rank - %i] FTI failed to protect a variable after increased the size :: %s\n", FTI_APP_RANK,  errormsg);
+                MPI_Abort(MPI_COMM_WORLD, PROTECT_FAILED_AFTER_RAISE);
+            }     
+        }
         init_arrays(A, B, asize);
         write_data(B, &asize, FTI_APP_RANK);
         MPI_Barrier(FTI_COMM_WORLD);
@@ -200,7 +275,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
+// IF FTI STARTS AFTER CRASH
     if ( state == RESTART || state == KEEP ) {
+        if (var_size == 1) {
+            asize = FTI_GetStoredSize(0)/sizeof(double);
+            A = (double*) FTI_Realloc(0, A);
+            B = (double*) FTI_Realloc(1, B);
+        }
         result = FTI_Recover();
         if (result != FTI_SCES) {
             exit(RECOVERY_FAILED);
@@ -283,14 +364,43 @@ int validify(double* A, double* B_chk, size_t asize) {
 
 int write_data(double* B, size_t *asize, int rank) {
     char str[256];
+    int perr = 0;
+    char *errormsg;
     sprintf(str, "chk/check-%i.tst", rank);
     FILE* f = fopen(str, "wb");
+    if (f == NULL) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fprintf(stderr,"[ERROR rank - %i] Could not create test data file '%s' :: %s\n", rank, str, errormsg);
+        MPI_Abort(MPI_COMM_WORLD, TEST_FAILED);
+    }
+
     size_t written = 0;
+    double *ptr;
 
-    fwrite( (void*) asize, sizeof(size_t), 1, f);
+    perr = fwrite( (void*) asize, sizeof(size_t), 1, f);
+    if (perr == 0) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fclose(f);
+        fprintf(stderr,"[ERROR rank - %i] Could not write test data :: %s\n", rank,  errormsg);
+        MPI_Abort(MPI_COMM_WORLD, TEST_FAILED);
+    }     
 
-    while ( written < (*asize) ) {
-        written += fwrite( (void*) B, sizeof(double), (*asize), f);
+    ptr = B;
+    while ( written < *asize ) {
+        written += fwrite( (void*) ptr, sizeof(double), (*asize), f);
+        if (written == 0) {
+            perr = errno;
+            errormsg = strerror(perr);
+            perr = 0;
+            fclose(f);
+            fprintf(stderr,"[ERROR rank - %i] Could not write test data :: %s\n", rank,  errormsg);
+            MPI_Abort(MPI_COMM_WORLD, TEST_FAILED);
+        }     
+        ptr += written;
     }
 
     fclose(f);
@@ -300,18 +410,48 @@ int write_data(double* B, size_t *asize, int rank) {
 
 int read_data(double* B_chk, size_t *asize_chk, int rank, size_t asize) {
     char str[256];
+    int perr = 0;
+    char *errormsg;
     sprintf(str, "chk/check-%i.tst", rank);
     FILE* f = fopen(str, "rb");
+    if (f == NULL) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fprintf(stderr,"[ERROR rank - %i] Could not open test data file '%s' :: %s\n", rank, str, errormsg);
+        MPI_Abort(MPI_COMM_WORLD, TEST_FAILED);
+    }
     size_t read = 0;
+    double *ptr;
 
-    fread( (void*) asize_chk, sizeof(size_t), 1, f);
+    perr = fread( (void*) asize_chk, sizeof(size_t), 1, f);
+    if (perr == 0) {
+        perr = errno;
+        errormsg = strerror(perr);
+        perr = 0;
+        fclose(f);
+        fprintf(stderr,"[ERROR rank - %i] Could not read test data :: %s\n", rank,  errormsg);
+        MPI_Abort(MPI_COMM_WORLD, TEST_FAILED);
+    }     
     if ((*asize_chk) != asize) {
         printf("[ERROR -%i] : wrong dimension 'asize' -- asize: %zd, asize_chk: %zd\n", rank, asize, *asize_chk);
         fflush(stdout);
         return -1;
     }
-    while ( read < (*asize_chk) ) {
-        read += fread( (void*) B_chk, sizeof(double), (*asize_chk), f);
+
+    ptr = B_chk;
+    while ( read < *asize_chk ) {
+        read += fread( (void*) ptr, sizeof(double), (*asize_chk), f);
+        if (read == 0) {
+            perr = errno;
+            errormsg = strerror(perr);
+            perr = 0;
+            fclose(f);
+            fprintf(stderr,"[ERROR rank - %i] Could not read test data :: %s\n", rank,  errormsg);
+            MPI_Abort(MPI_COMM_WORLD, TEST_FAILED);
+        }     
+        ptr += read;
+
     }
 
     fclose(f);

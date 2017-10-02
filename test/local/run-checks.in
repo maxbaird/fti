@@ -19,6 +19,7 @@ diffSize=0
 verbose=0
 eraseFiles=0
 corruptFiles=0
+varySize=(0)
 FAILED=0
 SUCCEED=0
 FAULTY=0
@@ -32,6 +33,9 @@ Usage: ./run-checks.sh [options]
 -e|--erase-files    delete files before recovery
 -d|--diff-size      use different sizes for checkpoint files
 -c|--corrupt-files  corrupt files before recovery
+-v|--vary-size      vary ckpt size after FTI_Init
+
+-t|--set-timeout    set timeout
 
 Default (no options):
 
@@ -80,9 +84,11 @@ Also after the Flush to the PFS for the Cases Head=0 and Head=1 one checkpoint f
 
 -> 19 additional tests
 
-if -e and -c is passed, there will be in total 72 tests.
-
 If *diff-size* is set, the checkpoint files have different sizes.
+
+Twice the amount of tests if *vary-size* set true.
+
+if -v, -e and -c is passed, there will be in total 144 tests for each I/O. Hence 432 tests in total.
 EOF
 }
 while [[ $# -gt 0 ]]
@@ -94,10 +100,6 @@ case $key in
     diffSize=1
     echo "[OPTION] Set different checkpoint sizes -> TRUE"
     ;;
-    -v|--verbose)
-    verbose=1
-    echo "[OPTION] Set verbose mode -> TRUE"
-    ;;
     -e|--erase-files)
     eraseFiles=1
     echo "[OPTION] Set erase checkpoint files -> TRUE"
@@ -105,6 +107,10 @@ case $key in
     -c|--corrupt-files)
     corruptFiles=1
     echo "[OPTION] Set corrupt checkpoint files -> TRUE"
+    ;;
+    -v|--vary-size)
+    varySize+=(1)
+    echo "[OPTION] Set variate checkpoint size after FTI_Init() -> TRUE"
     ;;
     -t|--set-timeout)
     if [[ $2 -lt "10" ]] || [[ $2 == -* ]]; then
@@ -155,7 +161,7 @@ inline_l3                      = 1
 inline_l4                      = 1
 keep_last_ckpt = 0
 group_size                     = 4
-verbosity                      = 2
+verbosity                      = 1
 
 
 [restart]
@@ -183,25 +189,33 @@ should_not_fail() {
 	if [ $1 = 0 ]; then
 	    echo -e "\033[0;32mpassed\033[m"
 		let SUCCEED=SUCCEED+1
-	elif [ $1 = 255 ]; then
-        echo -e "\033[0;31mfailed\033[m (FTI Abort)"
+	elif [ $1 = 20 ]; then
+		echo -e "\033[0;31mfailed\033[m (FTI_Init failed!)"
 		let FAILED=FAILED+1
 		testFailed=1
 	elif [ $1 = 30 ]; then
-		echo -e "\033[0;31mfailed\033[m (Checkpoint Data Corrupted!)"
-		let FAILED=FAILED+1
-		testFailed=1
-	elif [ $1 = 20 ]; then
-        echo -e "\033[0;31mfailed\033[m (Recovery Failed)"
-		let FAILED=FAILED+1
-		testFailed=1
-	elif [ $1 = 143 ]; then
-        echo -e "\033[0;31mfailed\033[m (Process Killed, Timeout!)"
+        echo -e "\033[0;31mfailed\033[m (FTI_Recover failed)"
 		let FAILED=FAILED+1
 		testFailed=1
 	elif [ $1 = 40 ]; then
-        echo -e "\033[0;31mfailed\033[m (Test Data Corrupted!)"
+        echo -e "\033[0;31mfailed\033[m (FTI_Protect failed)"
+		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 50 ]; then
+        echo -e "\033[0;31mfailed\033[m (FTI_Protect failed after raise)"
+		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 60 ]; then
+		echo -e "\033[0;31mfailed\033[m (Checkpoint data corrupted!)"
+		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 70 ]; then
+        echo -e "\033[0;31mfailed\033[m (Unitary test failed!)"
 		let FAULTY=FAULTY+1
+		testFailed=1
+	elif [ $1 = 143 ]; then
+        echo -e "\033[0;31mfailed\033[m (Process killed, timeout!)"
+		let FAILED=FAILED+1
 		testFailed=1
 	else
 		echo "Unknown exit status: "$1
@@ -211,27 +225,36 @@ should_not_fail() {
 }
 
 should_fail() {
-	if [ $1 = 255 ]; then
-	    echo -e "\033[0;32mpassed\033[m (FTI Abort)"
-		let SUCCEED=SUCCEED+1
-	elif [ $1 = 0 ]; then
+	if [ $1 = 0 ]; then
         echo -e "\033[0;31mfailed\033[m (Finalized Without Error!)"
 		let FAILED=FAILED+1
 		testFailed=1
+	elif [ $1 = 20 ]; then
+	    echo -e "\033[0;32mpassed\033[m (FTI_Init failed)"
+		let SUCCEED=SUCCEED+1
 	elif [ $1 = 30 ]; then
+        echo -e "\033[0;32mpassed\033[m (Recovery failed)"
+		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 40 ]; then
+        echo -e "\033[0;31mfailed\033[m (FTI_Protect failed)"
+		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 50 ]; then
+        echo -e "\033[0;31mfailed\033[m (FTI_Protect failed after raise)"
+		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 60 ]; then
 		echo -e "\033[0;31mfailed\033[m (Checkpoint Data Corrupted!)"
 		let FAILED=FAILED+1
+		testFailed=1
+	elif [ $1 = 70 ]; then
+        echo -e "\033[0;31mfailed\033[m (Unitary test failed!)"
+		let FAULTY=FAULTY+1
 		testFailed=1
 	elif [ $1 = 143 ]; then
         echo -e "\033[0;31mfailed\033[m (Process Killed, Timeout!)"
 		let FAILED=FAILED+1
-		testFailed=1
-	elif [ $1 = 20 ]; then
-        echo -e "\033[0;32mpassed\033[m (Recovery failed)"
-		let SUCCEED=SUCCEED+1
-	elif [ $1 = 40 ]; then
-        echo -e "\033[0;31mfailed\033[m (Test Data Corrupted!)"
-		let FAULTY=FAULTY+1
 		testFailed=1
 	else
 		echo "Unknown exit status: "$1
@@ -284,687 +307,697 @@ for io in $(seq 1 @IO@); do
         for level in ${LEVEL[*]}; do
             awk -v var="$keep" '$1 == "keep_last_ckpt" {$3 = var}1' TMPLT > tmp; cp tmp $NAME
             echo -e "[ \033[1m*** Testing "${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1)... ***\033[m ]"
-            if [ $keep -eq "1" ]; then
-                #                  #
-                # --- KEEP = 1 --- #
-                #                  #
-                ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
-                awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                should_not_fail $?
-                if [ $testFailed = 1 ]; then
-                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), should recover, ID: "$check_id >> failed.log
-                    testFailed=0
+            for isVarySize in ${varySize[*]}; do
+                if [ $isVarySize -eq "1" ]; then
+                    echo -e "[ \033[1m* Varying checkpoint sizes after FTI_Init() *\033[m ]"
                 fi
-                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                if [ $eraseFiles = "1" ] && [ $DFLAG = "1" ]; then
-                    awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
+                if [ $keep -eq "1" ]; then
+                    #                  #
+                    # --- KEEP = 1 --- #
+                    #                  #
+                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
                     check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                    ### DELETE CHECKPOINT FILE
-                    echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
-                    folder="Global/"$check_id"/l4"
-                    filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
-                    ( set -x; rm -rf $folder"/"$filename )
                     ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
                     awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                    should_fail $?
+                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                    should_not_fail $?
                     if [ $testFailed = 1 ]; then
-                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
+                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), should recover, ID: "$check_id >> failed.log
                         testFailed=0
                     fi
                     awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    let DFLAG=2
-                fi
-#                if [ $corruptFiles = "1" ] && [ $CFLAG = "1" ]; then
-#                    awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-#                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-#                    ### CORRUPT CHECKPOINT FILE
-#                    echo -e "[ \033[1mCorrupting Checkpoint File...\033[m ]"
-#                    folder="Global/"$check_id"/l4"
-#                    filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
-#                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-#                    ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
-#                    awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-#                    should_fail $?
-#                    if [ $testFailed = 1 ]; then
-#                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
-#                        testFailed=0
-#                    fi
-#                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                    let CFLAG=2
-#                fi
-            fi
-            if [ $keep -eq "0" ]; then
-                #                  #
-                # --- KEEP = 0 --- #
-                #                  #
-                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                should_not_fail $?
-                if [ $testFailed = 1 ]; then
-                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), should recover, ID: "$check_id >> failed.log
-                    testFailed=0
-                fi
-                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                if [ $corruptFiles = "1" ]; then
-                    if [ $level = 1 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### CORRUPT Checkpoint FILES
-                        echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l1"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-                    if [ $level = 2 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### CORRUPT Checkpoint FILES
-                        echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l2"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        folder="Local/node2/"$check_id"/l2"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L2 ckpt files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### CORRUPT PARTNER FILES
-                        echo -e "[ \033[1mCorrupting Partner Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l2"
-                        filename=$(ls $folder | grep Pcof | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        folder="Local/node2/"$check_id"/l2"
-                        filename=$(ls $folder | grep Pcof | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L2 partner files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-                    if [ $level = 3 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### CORRUPT Checkpoint FILES
-                        echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        folder="Local/node2/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L3 ckpt files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### CORRUPT PARTNER FILES
-                        echo -e "[ \033[1mCorrupting Encoded Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rsed | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        folder="Local/node2/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rsed | head -n 1)
-                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L3 encoded files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-#                    if [ $level = 4 ]; then
-#                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-#                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-#                        ### CORRUPT Checkpoint FILES
-#                        echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-#                        folder="Global/"$check_id"/l4"
-#                        filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
-#                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-#                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-#                        should_fail $?
-#                        if [ $testFailed = 1 ]; then
-#                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
-#                            testFailed=0
-#                        fi
-#                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                    fi
-                fi
-                if [ $eraseFiles = "1" ]; then
-                    if [ $level = 1 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE CHECKPOINT FILE
-                        echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
-                        folder="Local/node0/"$check_id"/l1"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-                    if [ $level = 2 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE Checkpoint FILES
-                        echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l2"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        folder="Local/node2/"$check_id"/l2"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L2 ckpt files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE PARTNER FILES
-                        echo -e "[ \033[1mDeleting Partner Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l2"
-                        filename=$(ls $folder | grep Pcof | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        folder="Local/node2/"$check_id"/l2"
-                        filename=$(ls $folder | grep Pcof | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L2 partner files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE NODES
-                        echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
-                        ( set -x; rm -rf Local/node0 )
-                        ( set -x; rm -rf Local/node1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two consecutive nodes, should not recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE NODES
-                        echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
-                        ( set -x; rm -rf Local/node0 )
-                        ( set -x; rm -rf Local/node2 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-                    if [ $level = 3 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE Checkpoint FILES
-                        echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        folder="Local/node2/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rank | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L3 ckpt files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE ENCODED FILES
-                        echo -e "[ \033[1mDeleting Encoded Files...\033[m ]"
-                        folder="Local/node0/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rsed | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        folder="Local/node2/"$check_id"/l3"
-                        filename=$(ls $folder | grep Rsed | head -n 1)
-                        ( set -x; rm -rf $folder"/"$filename )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L3 encoded files, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE NODES
-                        echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
-                        ( set -x; rm -rf Local/node0 )
-                        ( set -x; rm -rf Local/node1 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two consecutive nodes, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ### DELETE NODES
-                        echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
-                        ( set -x; rm -rf Local/node0 )
-                        ( set -x; rm -rf Local/node2 )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-                    if [ $level = 4 ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
+                    if [ $eraseFiles = "1" ] && [ $DFLAG = "1" ]; then
+                        awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
                         check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
                         ### DELETE CHECKPOINT FILE
                         echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
                         folder="Global/"$check_id"/l4"
                         filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
                         ( set -x; rm -rf $folder"/"$filename )
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                    fi
-                fi
-            fi
-        done
-        rm $NAME
-    done
-    for keep in ${KEEP[*]}; do
-        for level in ${LEVEL[*]}; do
-            for inline in 0 1; do
-                if [ $inline -eq 1 ] || [[ $inline -eq 0 && $level -ne 1 ]]; then
-                    set_inline $level $inline
-                    NAME="H1K"$keep"I"$l2""$l3""$l4
-                    #                  #
-                    # --- HEAD = 1 --- #
-                    #                  #
-                    awk '$1 == "head" {$3 = 1}1' TMPLT > tmp; cp tmp TMPLT
-                    awk -v var="$keep" '$1 == "keep_last_ckpt" {$3 = var}1' TMPLT > tmp; cp tmp TMPLT
-                    awk -v var="$l2" '$1 == "inline_l2" {$3 = var}1' TMPLT > tmp; cp tmp TMPLT
-                    awk -v var="$l3" '$1 == "inline_l3" {$3 = var}1' TMPLT > tmp; cp tmp TMPLT
-                    awk -v var="$l4" '$1 == "inline_l4" {$3 = var}1' TMPLT > $NAME; rm tmp
-                    echo -e "[ \033[1m*** Testing "${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4")... ***\033[m ]"
-                    if [ $keep -eq "1" ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
                         ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
                         awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
+                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                        should_fail $?
                         if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), should recover, ID: "$check_id >> failed.log
+                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
                             testFailed=0
                         fi
                         awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        if [ $eraseFiles = "1" ] && [ $DFLAG = "2" ]; then
-                            awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
+                        let DFLAG=2
+                    fi
+#                    if [ $corruptFiles = "1" ] && [ $CFLAG = "1" ]; then
+#                        awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+#                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+#                        ### CORRUPT CHECKPOINT FILE
+#                        echo -e "[ \033[1mCorrupting Checkpoint File...\033[m ]"
+#                        folder="Global/"$check_id"/l4"
+#                        filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
+#                        ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+#                        ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
+#                        awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+#                        should_fail $?
+#                        if [ $testFailed = 1 ]; then
+#                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
+#                            testFailed=0
+#                        fi
+#                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                        let CFLAG=2
+#                    fi
+                fi
+                if [ $keep -eq "0" ]; then
+                    #                  #
+                    # --- KEEP = 0 --- #
+                    #                  #
+                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                    should_not_fail $?
+                    if [ $testFailed = 1 ]; then
+                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), should recover, ID: "$check_id >> failed.log
+                        testFailed=0
+                    fi
+                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                    if [ $corruptFiles = "1" ]; then
+                        if [ $level = 1 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### CORRUPT Checkpoint FILES
+                            echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l1"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        fi
+                        if [ $level = 2 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### CORRUPT Checkpoint FILES
+                            echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l2"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            folder="Local/node2/"$check_id"/l2"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L2 ckpt files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### CORRUPT PARTNER FILES
+                            echo -e "[ \033[1mCorrupting Partner Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l2"
+                            filename=$(ls $folder | grep Pcof | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            folder="Local/node2/"$check_id"/l2"
+                            filename=$(ls $folder | grep Pcof | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L2 partner files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        fi
+                        if [ $level = 3 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### CORRUPT Checkpoint FILES
+                            echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            folder="Local/node2/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L3 ckpt files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### CORRUPT PARTNER FILES
+                            echo -e "[ \033[1mCorrupting Encoded Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rsed | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            folder="Local/node2/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rsed | head -n 1)
+                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L3 encoded files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        fi
+#                        if [ $level = 4 ]; then
+#                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+#                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+#                            ### CORRUPT Checkpoint FILES
+#                            echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+#                            folder="Global/"$check_id"/l4"
+#                            filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
+#                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+#                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+#                            should_fail $?
+#                            if [ $testFailed = 1 ]; then
+#                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), corrupted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
+#                                testFailed=0
+#                            fi
+#                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                        fi
+                    fi
+                    if [ $eraseFiles = "1" ]; then
+                        if [ $level = 1 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE CHECKPOINT FILE
+                            echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
+                            folder="Local/node0/"$check_id"/l1"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        fi
+                        if [ $level = 2 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE Checkpoint FILES
+                            echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l2"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            folder="Local/node2/"$check_id"/l2"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L2 ckpt files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE PARTNER FILES
+                            echo -e "[ \033[1mDeleting Partner Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l2"
+                            filename=$(ls $folder | grep Pcof | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            folder="Local/node2/"$check_id"/l2"
+                            filename=$(ls $folder | grep Pcof | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L2 partner files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE NODES
+                            echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
+                            ( set -x; rm -rf Local/node0 )
+                            ( set -x; rm -rf Local/node1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two consecutive nodes, should not recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE NODES
+                            echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
+                            ( set -x; rm -rf Local/node0 )
+                            ( set -x; rm -rf Local/node2 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        fi
+                        if [ $level = 3 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE Checkpoint FILES
+                            echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            folder="Local/node2/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rank | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L3 ckpt files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE ENCODED FILES
+                            echo -e "[ \033[1mDeleting Encoded Files...\033[m ]"
+                            folder="Local/node0/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rsed | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            folder="Local/node2/"$check_id"/l3"
+                            filename=$(ls $folder | grep Rsed | head -n 1)
+                            ( set -x; rm -rf $folder"/"$filename )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L3 encoded files, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE NODES
+                            echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
+                            ( set -x; rm -rf Local/node0 )
+                            ( set -x; rm -rf Local/node1 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two consecutive nodes, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### DELETE NODES
+                            echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
+                            ( set -x; rm -rf Local/node0 )
+                            ( set -x; rm -rf Local/node2 )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                        fi
+                        if [ $level = 4 ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $isVarySize &>> check.log )
                             check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
                             ### DELETE CHECKPOINT FILE
                             echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
                             folder="Global/"$check_id"/l4"
                             filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
                             ( set -x; rm -rf $folder"/"$filename )
-                            ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
-                            awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $isVarySize &>> check.log )
                             should_fail $?
                             if [ $testFailed = 1 ]; then
-                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=0, keep="$keep", inline=(1,1,1), deleted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
                                 testFailed=0
                             fi
                             awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            let DFLAG=3
                         fi
-#                        if [ $corruptFiles = "1" ] && [ $CFLAG = "2" ]; then
-#                            awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-#                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-#                            ### CORRUPT CHECKPOINT FILE
-#                            echo -e "[ \033[1mCorrupting Checkpoint File...\033[m ]"
-#                            folder="Global/"$check_id"/l4"
-#                            filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
-#                            ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-#                            ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
-#                            awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-#                            should_fail $?
-#                            if [ $testFailed = 1 ]; then
-#                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
-#                                testFailed=0
-#                            fi
-#                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                            let CFLAG=3
-#                        fi
                     fi
-                    if [ $keep -eq "0" ]; then
-                        ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                        check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                        ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                        should_not_fail $?
-                        if [ $testFailed = 1 ]; then
-                            echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), should recover, ID: "$check_id >> failed.log
-                            testFailed=0
-                        fi
-                        awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                        if [ $corruptFiles = "1" ]; then
-                            if [ $level = 1 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### CORRUPT Checkpoint FILES
-                                echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l1"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                fi
+            done
+        done
+        rm $NAME
+    done
+    for keep in ${KEEP[*]}; do
+        for level in ${LEVEL[*]}; do
+            for inline in 0 1; do
+                for isVarySize in ${varySize[*]}; do
+                    if [ $isVarySize -eq "1" ]; then
+                        echo -e "[ \033[1m* Varying checkpoint sizes after FTI_Init() *\033[m ]"
+                    fi
+                    if [ $inline -eq 1 ] || [[ $inline -eq 0 && $level -ne 1 ]]; then
+                        set_inline $level $inline
+                        NAME="H1K"$keep"I"$l2""$l3""$l4
+                        #                  #
+                        # --- HEAD = 1 --- #
+                        #                  #
+                        awk '$1 == "head" {$3 = 1}1' TMPLT > tmp; cp tmp TMPLT
+                        awk -v var="$keep" '$1 == "keep_last_ckpt" {$3 = var}1' TMPLT > tmp; cp tmp TMPLT
+                        awk -v var="$l2" '$1 == "inline_l2" {$3 = var}1' TMPLT > tmp; cp tmp TMPLT
+                        awk -v var="$l3" '$1 == "inline_l3" {$3 = var}1' TMPLT > tmp; cp tmp TMPLT
+                        awk -v var="$l4" '$1 == "inline_l4" {$3 = var}1' TMPLT > $NAME; rm tmp
+                        echo -e "[ \033[1m*** Testing "${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4")... ***\033[m ]"
+                        if [ $keep -eq "1" ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
+                            awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), should recover, ID: "$check_id >> failed.log
+                                testFailed=0
                             fi
-                            if [ $level = 2 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### CORRUPT Checkpoint FILES
-                                echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l2"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                folder="Local/node2/"$check_id"/l2"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L2 ckpt files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### CORRUPT PARTNER FILES
-                                echo -e "[ \033[1mCorrupting Partner Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l2"
-                                filename=$(ls $folder | grep Pcof | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                folder="Local/node2/"$check_id"/l2"
-                                filename=$(ls $folder | grep Pcof | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L2 partner files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            fi
-                            if [ $level = 3 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### CORRUPT Checkpoint FILES
-                                echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                folder="Local/node2/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L3 ckpt files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### CORRUPT PARTNER FILES
-                                echo -e "[ \033[1mCorrupting Encoded Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rsed | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                folder="Local/node2/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rsed | head -n 1)
-                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L3 encoded files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            fi
-#                            if [ $level = 4 ]; then
-#                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-#                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-#                                ### CORRUPT Checkpoint FILES
-#                                echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
-#                                folder="Global/"$check_id"/l4"
-#                                filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
-#                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
-#                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-#                                should_fail $?
-#                                if [ $testFailed = 1 ]; then
-#                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
-#                                    testFailed=0
-#                                fi
-#                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-#                            fi
-                        fi
-                        if [ $eraseFiles = "1" ]; then
-                            if [ $level = 1 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE CHECKPOINT FILE
-                                echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
-                                folder="Local/node0/"$check_id"/l1"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            fi
-                            if [ $level = 2 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE Checkpoint FILES
-                                echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l2"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                folder="Local/node2/"$check_id"/l2"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L2 ckpt files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE PARTNER FILES
-                                echo -e "[ \033[1mDeleting Partner Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l2"
-                                filename=$(ls $folder | grep Pcof | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                folder="Local/node2/"$check_id"/l2"
-                                filename=$(ls $folder | grep Pcof | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L2 partner files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE NODES
-                                echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
-                                ( set -x; rm -rf Local/node0 )
-                                ( set -x; rm -rf Local/node1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two consecutive nodes, should not recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE NODES
-                                echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
-                                ( set -x; rm -rf Local/node0 )
-                                ( set -x; rm -rf Local/node2 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            fi
-                            if [ $level = 3 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE Checkpoint FILES
-                                echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                folder="Local/node2/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rank | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L3 ckpt files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE ENCODED FILES
-                                echo -e "[ \033[1mDeleting Encoded Files...\033[m ]"
-                                folder="Local/node0/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rsed | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                folder="Local/node2/"$check_id"/l3"
-                                filename=$(ls $folder | grep Rsed | head -n 1)
-                                ( set -x; rm -rf $folder"/"$filename )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L3 encoded files, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE NODES
-                                echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
-                                ( set -x; rm -rf Local/node0 )
-                                ( set -x; rm -rf Local/node1 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two consecutive nodes, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
-                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
-                                ### DELETE NODES
-                                echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
-                                ( set -x; rm -rf Local/node0 )
-                                ( set -x; rm -rf Local/node2 )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
-                                should_not_fail $?
-                                if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
-                                    testFailed=0
-                                fi
-                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
-                            fi
-                            if [ $level = 4 ]; then
-                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize &>> check.log )
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            if [ $eraseFiles = "1" ] && [ $DFLAG = "2" ]; then
+                                awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
                                 check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
                                 ### DELETE CHECKPOINT FILE
                                 echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
                                 folder="Global/"$check_id"/l4"
                                 filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
                                 ( set -x; rm -rf $folder"/"$filename )
-                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize &>> check.log )
+                                ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
+                                awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
                                 should_fail $?
                                 if [ $testFailed = 1 ]; then
-                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
+                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
                                     testFailed=0
                                 fi
                                 awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                let DFLAG=3
+                            fi
+#                            if [ $corruptFiles = "1" ] && [ $CFLAG = "2" ]; then
+#                                awk '$1 == "keep_last_ckpt" {$3 = 1}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                                ( set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+#                                check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+#                                ### CORRUPT CHECKPOINT FILE
+#                                echo -e "[ \033[1mCorrupting Checkpoint File...\033[m ]"
+#                                folder="Global/"$check_id"/l4"
+#                                filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
+#                                ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+#                                ### SETTING KEEP = 0 TO CLEAN DIRECTORY AFTER TEST
+#                                awk '$1 == "keep_last_ckpt" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                                ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+#                                should_fail $?
+#                                if [ $testFailed = 1 ]; then
+#                                    echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted flushed ckpt file on PFS, should not recover, ID: "$check_id >> failed.log
+#                                    testFailed=0
+#                                fi
+#                                awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                                let CFLAG=3
+#                            fi
+                        fi
+                        if [ $keep -eq "0" ]; then
+                            ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                            check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                            ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                            should_not_fail $?
+                            if [ $testFailed = 1 ]; then
+                                echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), should recover, ID: "$check_id >> failed.log
+                                testFailed=0
+                            fi
+                            awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                            if [ $corruptFiles = "1" ]; then
+                                if [ $level = 1 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### CORRUPT Checkpoint FILES
+                                    echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l1"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
+                                if [ $level = 2 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### CORRUPT Checkpoint FILES
+                                    echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    folder="Local/node2/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L2 ckpt files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### CORRUPT PARTNER FILES
+                                    echo -e "[ \033[1mCorrupting Partner Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Pcof | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    folder="Local/node2/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Pcof | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L2 partner files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
+                                if [ $level = 3 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### CORRUPT Checkpoint FILES
+                                    echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    folder="Local/node2/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L3 ckpt files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### CORRUPT PARTNER FILES
+                                    echo -e "[ \033[1mCorrupting Encoded Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rsed | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    folder="Local/node2/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rsed | head -n 1)
+                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L3 encoded files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
+#                                if [ $level = 4 ]; then
+#                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+#                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+#                                    ### CORRUPT Checkpoint FILES
+#                                    echo -e "[ \033[1mCorrupting Checkpoint Files...\033[m ]"
+#                                    folder="Global/"$check_id"/l4"
+#                                    filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
+#                                    ( set -x; printf "corruption" | dd conv=notrunc of=$folder"/"$filename bs=1 > /dev/null 2>&1 )
+#                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+#                                    should_fail $?
+#                                    if [ $testFailed = 1 ]; then
+#                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), corrupted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
+#                                        testFailed=0
+#                                    fi
+#                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+#                                fi
+                            fi
+                            if [ $eraseFiles = "1" ]; then
+                                if [ $level = 1 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE CHECKPOINT FILE
+                                    echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l1"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L1 ckpt file, should not recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
+                                if [ $level = 2 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE Checkpoint FILES
+                                    echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    folder="Local/node2/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L2 ckpt files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE PARTNER FILES
+                                    echo -e "[ \033[1mDeleting Partner Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Pcof | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    folder="Local/node2/"$check_id"/l2"
+                                    filename=$(ls $folder | grep Pcof | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L2 partner files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE NODES
+                                    echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
+                                    ( set -x; rm -rf Local/node0 )
+                                    ( set -x; rm -rf Local/node1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two consecutive nodes, should not recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE NODES
+                                    echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
+                                    ( set -x; rm -rf Local/node0 )
+                                    ( set -x; rm -rf Local/node2 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
+                                if [ $level = 3 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE Checkpoint FILES
+                                    echo -e "[ \033[1mDeleting Checkpoint Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    folder="Local/node2/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rank | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L3 ckpt files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE ENCODED FILES
+                                    echo -e "[ \033[1mDeleting Encoded Files...\033[m ]"
+                                    folder="Local/node0/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rsed | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    folder="Local/node2/"$check_id"/l3"
+                                    filename=$(ls $folder | grep Rsed | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L3 encoded files, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE NODES
+                                    echo -e "[ \033[1mDeleting Consecutive Nodes...\033[m ]"
+                                    ( set -x; rm -rf Local/node0 )
+                                    ( set -x; rm -rf Local/node1 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two consecutive nodes, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE NODES
+                                    echo -e "[ \033[1mDeleting Non-Consecutive Nodes...\033[m ]"
+                                    ( set -x; rm -rf Local/node0 )
+                                    ( set -x; rm -rf Local/node2 )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_not_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted two non-consecutive nodes, should recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
+                                if [ $level = 4 ]; then
+                                    ( set -x; mpirun -n $PROCS ./check.exe $NAME 1 $level $diffSize $varySize &>> check.log )
+                                    check_id=$(awk '$1 == "exec_id" {print $3}' < $NAME)
+                                    ### DELETE CHECKPOINT FILE
+                                    echo -e "[ \033[1mDeleting Checkpoint File...\033[m ]"
+                                    folder="Global/"$check_id"/l4"
+                                    filename=$(ls $folder | grep 'Rank\|mpiio\|sionlib' | head -n 1)
+                                    ( set -x; rm -rf $folder"/"$filename )
+                                    ( cmdpid=$BASHPID; (sleep $TIMEOUT; kill $cmdpid > /dev/null 2>&1 ) & set -x; mpirun -n $PROCS ./check.exe $NAME 0 $level $diffSize $varySize &>> check.log )
+                                    should_fail $?
+                                    if [ $testFailed = 1 ]; then
+                                        echo -e ${IO_NAMES[$io_id]}": L"$level", head=1, keep="$keep", inline=("$l2","$l3","$l4"), deleted L4 ckpt file, should not recover, ID: "$check_id >> failed.log
+                                        testFailed=0
+                                    fi
+                                    awk '$1 == "failure" {$3 = 0}1' $NAME > tmp; cp tmp $NAME; rm tmp
+                                fi
                             fi
                         fi
                     fi
-                fi
+                done
             done
         done
         rm $NAME
