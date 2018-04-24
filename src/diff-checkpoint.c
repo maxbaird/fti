@@ -46,6 +46,9 @@
 /**                                                                                     */
 /** Static Global Variables                                                             */
 
+static int                  HASH_MODE;
+static int                  DIFF_BLOCK_SIZE;
+
 static FTI_ADDRVAL          FTI_PageSize;       /**< memory page size                   */
 static FTI_ADDRVAL          FTI_PageMask;       /**< memory page mask                   */
 
@@ -62,6 +65,7 @@ static struct sigaction     OLD_SigAction;       /**< previous sigaction meta da
 
 static long countPages;
 static FTI_ADDRVAL* pagesGlobal;
+
 
 /** Function Definitions                                                                */
 int compare( const void* a, const void* b)
@@ -82,8 +86,37 @@ void resetPageCounter() {
     countPages = 0;
 }
 
+uint32_t adler32(unsigned char *data, size_t len)
+/*
+    where data is the location of the data in physical memory and
+    len is the length of the data in bytes
+*/
+{
+    uint32_t a = 1, b = 0;
+    size_t index;
+
+    // Process each byte of the data in order
+    for (index = 0; index < len; ++index)
+    {
+        a = (a + data[index]) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+
+    return (b << 16) | a;
+}
+
 int FTI_InitDiffCkpt( FTIT_configuration* FTI_Conf, FTIT_execution* FTI_Exec, FTIT_dataset* FTI_Data )
 {
+    if( getenv("FTI_HASH_MODE") != 0 ) {
+        HASH_MODE = atoi(getenv("FTI_HASH_MODE"));
+    } else {
+        HASH_MODE = 0;
+    }
+    if( getenv("FTI_DIFF_BLOCK_SIZE") != 0 ) {
+        DIFF_BLOCK_SIZE = atoi(getenv("FTI_DIFF_BLOCK_SIZE"));
+    } else {
+        DIFF_BLOCK_SIZE = 2048;
+    }
     enableDiffCkpt = FTI_Conf->enableDiffCkpt;
     diffMode = FTI_Conf->diffMode;
     if( enableDiffCkpt && FTI_Conf->diffMode == 0 ) {
@@ -110,6 +143,23 @@ int FTI_InitDiffCkpt( FTIT_configuration* FTI_Conf, FTIT_execution* FTI_Exec, FT
     } else {
         return FTI_SCES;
     }
+    switch (HASH_MODE) {
+        case 0:
+            FTI_Print("HASH MODE IS -> MD5", FTI_INFO);
+            break;
+        case 1:
+            FTI_Print("HASH MODE IS -> CRC32", FTI_INFO);
+            break;
+        case 2:
+            FTI_Print("HASH MODE IS -> ADLER32", FTI_INFO);
+            break;
+        case 3:
+            FTI_Print("HASH MODE IS -> FLETCHER32", FTI_INFO);
+            break;
+    }
+    char infostr[FTI_BUFS];
+    snprintf(infostr, FTI_BUFS, "DIFF_BLOCK_SIZE IS -> %d", DIFF_BLOCK_SIZE);
+    FTI_Print(infostr, FTI_INFO);
 }
 
 void printReport() {
@@ -650,19 +700,24 @@ int FTI_HashCmp( int varIdx, long hashIdx, FTI_ADDRPTR ptr, int hashBlockSize ) 
     // check if in range
     if ( hashIdx < FTI_HashDiffInfo.dataDiff[varIdx].nbBlocks ) {
         unsigned char md5hashNow[MD5_DIGEST_LENGTH];
-        uint32_t crc32hashNow;
+        uint32_t bit32hashNow;
         bool clean;
         if ( HASH_MODE == 0 ) {
-            MD5_CTX ctx;
-            MD5_Init(&ctx);
-            MD5_Update(&ctx, ptr, hashBlockSize);
-            MD5_Final(md5hashNow, &ctx);
-            clean = memcmp(md5hashNow, FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[hashIdx].md5hash, MD5_DIGEST_LENGTH) == 0;//&& ( hashBlockSize == DIFF_BLOCK_SIZE ) ) {
-        }
-        if ( HASH_MODE == 1 ) {
-            crc32hashNow = crc_32( ptr, hashBlockSize );
-            clean = crc32hashNow == FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[hashIdx].crc32hash; //&& ( hashBlockSize == DIFF_BLOCK_SIZE ) ) {
-        
+            MD5(ptr, hashBlockSize, md5hashNow);
+            clean = memcmp(md5hashNow, FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[hashIdx].md5hash, MD5_DIGEST_LENGTH) == 0;
+        } else {
+            switch ( HASH_MODE ) {
+                case 1:
+                    bit32hashNow = crc_32( ptr, hashBlockSize );
+                    break;
+                case 2:
+                    bit32hashNow = adler32( ptr, hashBlockSize );
+                    break;
+                case 3:
+                    bit32hashNow = fletcher32( ptr, hashBlockSize );
+                    break;
+            }
+            clean = bit32hashNow == FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[hashIdx].bit32hash;
         }
         // set clean if unchanged
         if ( clean ) {
@@ -705,6 +760,7 @@ int FTI_UpdateSigChanges(FTIT_dataset* FTI_Data)
 
 int FTI_UpdateHashChanges(FTIT_dataset* FTI_Data) 
 {   
+    double start_t = MPI_Wtime();
     int varIdx;
     int nbProtVar = FTI_HashDiffInfo.nbProtVar;
     long memuse = 0;
@@ -718,35 +774,44 @@ int FTI_UpdateHashChanges(FTIT_dataset* FTI_Data)
         int blockIdx;
         int nbBlocks = FTI_HashDiffInfo.dataDiff[varIdx].nbBlocks;
         for(blockIdx=0; blockIdx<nbBlocks; ++blockIdx) {
-            //memuse += MD5_DIGEST_LENGTH;        
-            memuse += sizeof(uint32_t);        
-            if ( !FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].isValid || FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].dirty ) {
-                width = ( (FTI_HashDiffInfo.dataDiff[varIdx].totalSize - pos) > DIFF_BLOCK_SIZE ) ? DIFF_BLOCK_SIZE : (FTI_HashDiffInfo.dataDiff[varIdx].totalSize - pos);
+            if ( FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].isValid ) {
                 if ( HASH_MODE == 0 ) {
-                    MD5_CTX ctx;
-                    MD5_Init(&ctx);
-                    MD5_Update(&ctx, ptr, width);
-                    MD5_Final(FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].md5hash, &ctx);
+                    memuse += MD5_DIGEST_LENGTH;
+                } else {
+                    memuse += sizeof(uint32_t); 
                 }
-                if ( HASH_MODE == 1 ) {
-                    FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].crc32hash = crc_32( ptr, width );
+                if ( !FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].isValid || FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].dirty ) {
+                    width = ( (FTI_HashDiffInfo.dataDiff[varIdx].totalSize - pos) > DIFF_BLOCK_SIZE ) ? DIFF_BLOCK_SIZE : (FTI_HashDiffInfo.dataDiff[varIdx].totalSize - pos);
+                    switch ( HASH_MODE ) {
+                        case 0:
+                            MD5(ptr, width, FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].md5hash);
+                            break;
+                        case 1:
+                            FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].bit32hash = crc_32( ptr, width );
+                            break;
+                        case 2:
+                            FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].bit32hash = adler32( ptr, width );
+                            break;
+                        case 3:
+                            FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].bit32hash = fletcher32( ptr, width );
+                            break;
+                    }
+                    if ( FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].dirty ) {
+                        FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].dirty = false;
+                    }
                 }
-                if ( FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].dirty ) {
-                    FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].dirty = false;
-                }
-                if ( !FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].isValid ) {
-                    FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].isValid = true;
-                }
+            } else {
+                FTI_HashDiffInfo.dataDiff[varIdx].hashBlocks[blockIdx].isValid = true;
             }
             ptr += (FTI_ADDRVAL) width;
             pos += width;
         }
     }
-    int rank;
-    MPI_Comm_rank(FTI_COMM_WORLD, &rank);
-    if (rank == 0) {
-        printf("hash arrays in memory: %ld Bytes, total memory protected: %ld\n", memuse, totalmemprot);
-    }
+    char strout[FTI_BUFS];
+    snprintf(strout, FTI_BUFS, "hash arrays in memory: %ld Bytes, total memory protected: %ld\n", memuse, totalmemprot);
+    FTI_Print(strout, FTI_INFO);
+    snprintf(strout, FTI_BUFS, "Update hashes took: %lf second's", MPI_Wtime()-start_t);
+    FTI_Print(strout, FTI_INFO);
 }
 
 int FTI_ReceiveDiffChunk(int id, FTI_ADDRVAL data_offset, FTI_ADDRVAL data_size, FTI_ADDRVAL* buffer_offset, FTI_ADDRVAL* buffer_size, FTIT_execution* FTI_Exec, FTIFF_dbvar* dbvar) {

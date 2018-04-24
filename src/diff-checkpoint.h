@@ -42,8 +42,52 @@
 /**                                                                             */
 /** Global Constans                                                             */
 
-#define HASH_MODE 1
-#define DIFF_BLOCK_SIZE 128
+unsigned char *MD5(const unsigned char *d, unsigned long n,
+                         unsigned char *md);
+
+uint32_t
+fletcher32(const uint16_t *data, size_t len)
+{
+        uint32_t c0, c1;
+        unsigned int i;
+
+        for (c0 = c1 = 0; len >= 360; len -= 360) {
+                for (i = 0; i < 360; ++i) {
+                        c0 = c0 + *data++;
+                        c1 = c1 + c0;
+                }
+                c0 = c0 % 65535;
+                c1 = c1 % 65535;
+        }
+        for (i = 0; i < len; ++i) {
+                c0 = c0 + *data++;
+                c1 = c1 + c0;
+        }
+        c0 = c0 % 65535;
+        c1 = c1 % 65535;
+        return (c1 << 16 | c0);
+}
+
+const uint32_t MOD_ADLER = 65521;
+
+uint32_t adler32(unsigned char *data, size_t len);
+/*
+    where data is the location of the data in physical memory and
+    len is the length of the data in bytes
+*/
+//{
+//    uint32_t a = 1, b = 0;
+//    size_t index;
+//
+//    // Process each byte of the data in order
+//    for (index = 0; index < len; ++index)
+//    {
+//        a = (a + data[index]) % MOD_ADLER;
+//        b = (b + a) % MOD_ADLER;
+//    }
+//
+//    return (b << 16) | a;
+//}
 
 typedef struct              FTIT_DataRange
 {
@@ -72,7 +116,7 @@ typedef struct              FTIT_DataDiffInfoSignal
 typedef struct              FTIT_HashBlock
 {
     unsigned char*          md5hash;
-    uint32_t                crc32hash;
+    uint32_t                bit32hash;
     bool                    dirty;
     bool                    isValid;
 
