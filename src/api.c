@@ -38,6 +38,7 @@
 
 
 #include "interface.h"
+#include "api_cuda.h"
 
 /** General configuration information used by FTI.                         */
 static FTIT_configuration FTI_Conf;
@@ -835,7 +836,7 @@ int FTI_Checkpoint(int id, int level)
     int lastCkptLvel = FTI_Exec.ckptLvel; //Store last successful writing checkpoint level in case of failure
     FTI_Exec.ckptLvel = level; //For FTI_WriteCkpt
     int res = FTI_Try(FTI_WriteCkpt(&FTI_Conf, &FTI_Exec, &FTI_Topo, FTI_Ckpt, FTI_Data), "write the checkpoint.");
-    double t2 = MPI_Wtime(); //Time after writing checkpoint
+    double t2 = MPI_Wtime(); //Time after riting checkpoint
 
     // FTIFF: send meta info to the heads
     FTIFF_headInfo *headInfo;
@@ -969,7 +970,26 @@ int FTI_Recover()
     }
 
     for (i = 0; i < FTI_Exec.nbVar; i++) {
-        fread(FTI_Data[i].ptr, 1, FTI_Data[i].size, fd);
+        int host_accessible_ptr = host_accessible_pointer((const void*)FTI_Data[i].ptr);
+      
+        if(host_accessible_ptr == 0){
+          void  *dev_ptr = FTI_Data[i].ptr;
+          FTI_Data[i].ptr = malloc(FTI_Data[i].count * FTI_Data[i].eleSize);
+
+          if(FTI_Data[i].ptr == NULL)
+          {
+            fprintf(stderr, "Failed to allocate scratch buffer in: %s\n", __func__);
+          }
+          
+          fread(FTI_Data[i].ptr, 1, FTI_Data[i].size, fd);
+          copy_to_device(dev_ptr, FTI_Data[i].ptr, FTI_Data[i].count*FTI_Data[i].eleSize);
+          free(FTI_Data[i].ptr);
+          FTI_Data[i].ptr = dev_ptr;
+        }
+        else{
+          fread(FTI_Data[i].ptr, 1, FTI_Data[i].size, fd);
+        }
+
         if (ferror(fd)) {
             FTI_Print("Could not read FTI checkpoint file.", FTI_EROR);
             fclose(fd);

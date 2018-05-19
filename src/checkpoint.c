@@ -43,6 +43,7 @@
 #include <string.h>
 
 #include "interface.h"
+#include "api_cuda.h"
 
 /*-------------------------------------------------------------------------*/
 /**
@@ -209,7 +210,6 @@ int FTI_WriteCkpt(FTIT_configuration* FTI_Conf, FTIT_execution* FTI_Exec,
 
     snprintf(str, FTI_BUFS, "Time writing checkpoint file : %f seconds.", MPI_Wtime() - tt);
     FTI_Print(str, FTI_DBUG);
-
     res = FTI_Try(FTI_CreateMetadata(FTI_Conf, FTI_Exec, FTI_Topo, FTI_Ckpt, FTI_Data), "create metadata.");
     return res;
 }
@@ -446,7 +446,28 @@ int FTI_WritePosix(FTIT_configuration* FTI_Conf, FTIT_execution* FTI_Exec,
         int fwrite_errno;
         while (written < FTI_Data[i].count && !ferror(fd)) {
             errno = 0;
-            written += fwrite(((char*)FTI_Data[i].ptr) + (FTI_Data[i].eleSize*written), FTI_Data[i].eleSize, FTI_Data[i].count - written, fd);
+
+            int host_accessible_ptr = host_accessible_pointer((const void*)FTI_Data[i].ptr); 
+            if(host_accessible_ptr == 0)
+            {
+              void *dev_ptr = FTI_Data[i].ptr;
+              FTI_Data[i].ptr = malloc(FTI_Data[i].count * FTI_Data[i].eleSize);
+              
+              if(FTI_Data[i].ptr == NULL)
+              {
+                fprintf(stderr, "Failed to allocate FTI Scratch buffer\n");
+                exit(EXIT_FAILURE);
+              }
+              
+              copy_from_device(FTI_Data[i].ptr, dev_ptr, FTI_Data[i].count * FTI_Data[i].eleSize);
+
+              written += fwrite(((char*)FTI_Data[i].ptr) + (FTI_Data[i].eleSize*written), FTI_Data[i].eleSize, FTI_Data[i].count - written, fd);
+              FTI_Data[i].ptr = dev_ptr;
+            }
+            else{
+              written += fwrite(((char*)FTI_Data[i].ptr) + (FTI_Data[i].eleSize*written), FTI_Data[i].eleSize, FTI_Data[i].count - written, fd);
+            }
+
             fwrite_errno = errno;
         }
         if (ferror(fd)) {
