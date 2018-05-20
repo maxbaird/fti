@@ -447,13 +447,14 @@ int FTI_WritePosix(FTIT_configuration* FTI_Conf, FTIT_execution* FTI_Exec,
         while (written < FTI_Data[i].count && !ferror(fd)) {
             errno = 0;
 
-            int res = FTI_Try(FTI_determine_pointer_type((const void*)FTI_Data[i].ptr), "determine pointer type"); 
+            int ptr_type;
+            int res = FTI_Try(FTI_determine_pointer_type((const void*)FTI_Data[i].ptr, &ptr_type), "determine pointer type"); 
 
             if(res == FTI_NSCS){
               return FTI_NSCS;
             }
 
-            if(res == GPU_POINTER)
+            if(ptr_type == GPU_POINTER)
             {
               void *dev_ptr = FTI_Data[i].ptr;
               FTI_Data[i].ptr = malloc(FTI_Data[i].count * FTI_Data[i].eleSize);

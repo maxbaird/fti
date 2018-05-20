@@ -199,14 +199,15 @@ int FTI_Checksum(FTIT_execution* FTI_Exec, FTIT_dataset* FTI_Data,
 
         //iterate all variables
         for (i = 0; i < FTI_Exec->nbVar; i++) {
-            int res = FTI_Try(FTI_determine_pointer_type((const void*)FTI_Data[i].ptr), "determine pointer type");
+            int ptr_type;
+            int res = FTI_Try(FTI_determine_pointer_type((const void*)FTI_Data[i].ptr, &ptr_type), "determine pointer type");
 
             if(res == FTI_NSCS){
               return FTI_NSCS;
             }
 
             void *dev_ptr = NULL;
-            if(res == GPU_POINTER){
+            if(ptr_type == GPU_POINTER){
               dev_ptr = FTI_Data[i].ptr;
               FTI_Data[i].ptr = malloc(FTI_Data[i].count * FTI_Data[i].eleSize);
 
@@ -223,7 +224,7 @@ int FTI_Checksum(FTIT_execution* FTI_Exec, FTIT_dataset* FTI_Data,
             
             MD5_Update (&mdContext, FTI_Data[i].ptr, FTI_Data[i].size);
 
-            if(res == 0){
+            if(ptr_type == GPU_POINTER){
               free(FTI_Data[i].ptr);
               FTI_Data[i].ptr = dev_ptr;
             }
