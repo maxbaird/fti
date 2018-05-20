@@ -199,25 +199,31 @@ int FTI_Checksum(FTIT_execution* FTI_Exec, FTIT_dataset* FTI_Data,
 
         //iterate all variables
         for (i = 0; i < FTI_Exec->nbVar; i++) {
-            int host_accessible_ptr = FTI_Try(host_accessible_pointer((const void*)FTI_Data[i].ptr), "check for host accessible pointer");
-            if(host_accessible_ptr != FTI_SCES){
+            int res = FTI_Try(FTI_determine_pointer_type((const void*)FTI_Data[i].ptr), "determine pointer type");
+
+            if(res == FTI_NSCS){
               return FTI_NSCS;
             }
+
             void *dev_ptr = NULL;
-            if(host_accessible_ptr == 0){
+            if(res == GPU_POINTER){
               dev_ptr = FTI_Data[i].ptr;
               FTI_Data[i].ptr = malloc(FTI_Data[i].count * FTI_Data[i].eleSize);
 
               if(FTI_Data[i].ptr == NULL){
-                FTI_Print("Failed to allocate FTI scratch buffer\n", FTI_EROR);
+                FTI_Print("Failed to allocate FTI scratch buffer", FTI_EROR);
                 return FTI_NSCS;
               }
-              copy_from_device(FTI_Data[i].ptr, dev_ptr, FTI_Data[i].count * FTI_Data[i].eleSize);
+              int result = FTI_Try(FTI_copy_from_device(FTI_Data[i].ptr, dev_ptr, FTI_Data[i].count * FTI_Data[i].eleSize), "copying data from GPU");
+
+              if(result == FTI_NSCS){
+                return FTI_NSCS;
               }
+            }
             
             MD5_Update (&mdContext, FTI_Data[i].ptr, FTI_Data[i].size);
 
-            if(host_accessible_ptr == 0){
+            if(res == 0){
               free(FTI_Data[i].ptr);
               FTI_Data[i].ptr = dev_ptr;
             }

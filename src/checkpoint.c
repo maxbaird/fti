@@ -447,19 +447,28 @@ int FTI_WritePosix(FTIT_configuration* FTI_Conf, FTIT_execution* FTI_Exec,
         while (written < FTI_Data[i].count && !ferror(fd)) {
             errno = 0;
 
-            int host_accessible_ptr = host_accessible_pointer((const void*)FTI_Data[i].ptr); 
-            if(host_accessible_ptr == 0)
+            int res = FTI_Try(FTI_determine_pointer_type((const void*)FTI_Data[i].ptr), "determine pointer type"); 
+
+            if(res == FTI_NSCS){
+              return FTI_NSCS;
+            }
+
+            if(res == GPU_POINTER)
             {
               void *dev_ptr = FTI_Data[i].ptr;
               FTI_Data[i].ptr = malloc(FTI_Data[i].count * FTI_Data[i].eleSize);
               
               if(FTI_Data[i].ptr == NULL)
               {
-                fprintf(stderr, "Failed to allocate FTI Scratch buffer\n");
-                exit(EXIT_FAILURE);
+                FTI_Print("Failed to allocate FTI Scratch buffer", FTI_EROR);
+                return FTI_NSCS;
               }
               
-              copy_from_device(FTI_Data[i].ptr, dev_ptr, FTI_Data[i].count * FTI_Data[i].eleSize);
+              res = FTI_Try(FTI_copy_from_device(FTI_Data[i].ptr, dev_ptr, FTI_Data[i].count * FTI_Data[i].eleSize), "copying data from GPU" );
+
+              if(res == FTI_NSCS){
+                return FTI_NSCS;
+              }
 
               written += fwrite(((char*)FTI_Data[i].ptr) + (FTI_Data[i].eleSize*written), FTI_Data[i].eleSize, FTI_Data[i].count - written, fd);
               FTI_Data[i].ptr = dev_ptr;

@@ -4,40 +4,45 @@
 #include "api_cuda.h"
 #include "interface.h"
 
-#define CUDA_ERROR_CHECK(fun)                                                                   \
-do{                                                                                             \
-    cudaError_t err = fun;                                                                      \
-    if(err != cudaSuccess)                                                                      \
-    {                                                                                           \
-      fprintf(stderr, "Cuda error %d %s:: %s\n", __LINE__, __func__, cudaGetErrorString(err));  \
-      return FTI_NSCS;                                                                          \
-    }                                                                                           \
+#define CUDA_ERROR_CHECK(fun)                                                              \
+do{                                                                                        \
+    cudaError_t err = fun;                                                                 \
+    char str[FTI_BUFS];                                                                    \
+    sprintf(str, "Cuda error %d %s:: %s", __LINE__, __func__, cudaGetErrorString(err));    \
+    if(err != cudaSuccess)                                                                 \
+    {                                                                                      \
+      FTI_Print(str, FTI_EROR);                                                            \
+      return FTI_NSCS;                                                                     \
+    }                                                                                      \
 }while(0);
 
-int host_accessible_pointer(const void *ptr)
+int FTI_determine_pointer_type(const void *ptr)
 {
-  int host_accessible = 1;
+  int pointer_type = CPU_POINTER;
   struct cudaPointerAttributes attributes;
-  cudaPointerGetAttributes(&attributes, ptr);
+  cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
+
+  if(err == cudaErrorInvalidDevice){
+    return FTI_NSCS;
+  }
 
   char str[FTI_BUFS];
 
-  if(attributes.memoryType == cudaMemoryTypeDevice)
-  {
-    host_accessible = 0;
-  }
-  if(attributes.isManaged == 1)
-  {
-    host_accessible = 1;
+  if(attributes.memoryType == cudaMemoryTypeDevice){
+    pointer_type = GPU_POINTER;
   }
 
-  sprintf(str, "Host accessible pointer found: %s\n", (host_accessible == 1) ? "true" : "false"); 
+  if(attributes.isManaged == 1){
+    pointer_type = CPU_POINTER;
+  }
+
+  sprintf(str, "Pointer type: %s", (pointer_type == CPU_POINTER) ? "CPU Pointer" : "GPU Pointer"); 
   FTI_Print(str, FTI_DBUG);
 
-  return host_accessible;
+  return pointer_type;
 }
 
-int copy_from_device(void* dst, void* src, long count)
+int FTI_copy_from_device(void* dst, void* src, long count)
 {
   char str[FTI_BUFS];
   sprintf(str, "Copying data from GPU");
@@ -46,7 +51,7 @@ int copy_from_device(void* dst, void* src, long count)
   return FTI_SCES;
 }
 
-int copy_to_device(void *dst, void *src, long count)
+int FTI_copy_to_device(void *dst, void *src, long count)
 {
   char str[FTI_BUFS];
   sprintf(str, "Copying to GPU");
