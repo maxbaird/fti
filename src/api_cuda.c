@@ -16,6 +16,18 @@ do{                                                                             
     }                                                                                   \
 }while(0);
 
+/*-------------------------------------------------------------------------*/
+/**
+  @brief      It determines whether the pointer type is a GPU or CPU pointer.
+  @param      ptr             The pointer to be checked.
+  @param      pointer_type    Output parameter specifying pointer type.
+  @return     integer         FTI_SCES if successful.
+
+  This function checks the pointer so that it can determine if the pointer
+  is a reference to CPU or GPU memory.
+
+ **/
+/*-------------------------------------------------------------------------*/
 int FTI_determine_pointer_type(const void *ptr, int *pointer_type)
 {
   *pointer_type = CPU_POINTER;
@@ -42,6 +54,18 @@ int FTI_determine_pointer_type(const void *ptr, int *pointer_type)
   return FTI_SCES;
 }
 
+/*-------------------------------------------------------------------------*/
+/**
+  @brief      It copies data from GPU to CPU.
+  @param      dst             CPU destination memory address.
+  @param      src             GPU source memory address.
+  @param      count           Size in bytes to copy.
+  @return     integer         FTI_SCES if successful.
+
+  This function copies count bytes from the GPU memory area pointed to by src
+  to the CPU memory area pointed to by dst.
+ **/
+/*-------------------------------------------------------------------------*/
 int FTI_copy_from_device(void* dst, void* src, long count)
 {
   char str[FTI_BUFS];
@@ -51,6 +75,18 @@ int FTI_copy_from_device(void* dst, void* src, long count)
   return FTI_SCES;
 }
 
+/*-------------------------------------------------------------------------*/
+/**
+  @brief      It copies data from CPU to GPU.
+  @param      dst             GPU destination memory address.
+  @param      src             CPU source memory address.
+  @param      count           Size in bytes to copy.
+  @return     integer         FTI_SCES if successful.
+
+  This function copies count bytes from the CPU memory area pointed to by src
+  to the GPU memory area pointed to by dst.
+ **/
+/*-------------------------------------------------------------------------*/
 int FTI_copy_to_device(void *dst, void *src, long count)
 {
   char str[FTI_BUFS];
