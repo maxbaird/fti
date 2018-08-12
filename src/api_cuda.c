@@ -4,18 +4,6 @@
 #include "api_cuda.h"
 #include "interface.h"
 
-#define CUDA_ERROR_CHECK(fun)                                                           \
-do{                                                                                     \
-    cudaError_t err = fun;                                                              \
-    char str[FTI_BUFS];                                                                 \
-    sprintf(str, "Cuda error %d %s:: %s", __LINE__, __func__, cudaGetErrorString(err)); \
-    if(err != cudaSuccess)                                                              \
-    {                                                                                   \
-      FTI_Print(str, FTI_EROR);                                                         \
-      return FTI_NSCS;                                                                  \
-    }                                                                                   \
-}while(0);
-
 /*-------------------------------------------------------------------------*/
 /**
   @brief      It determines whether the pointer type is a GPU or CPU pointer.

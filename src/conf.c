@@ -250,6 +250,8 @@ int FTI_TestConfig(FTIT_configuration* FTI_Conf, FTIT_topology* FTI_Topo,
         return FTI_NSCS;
     }
     if (FTI_Topo->nbProc % FTI_Topo->nodeSize != 0) {
+        fprintf(stdout, "nbProc: %d nodeSize: %d\n", FTI_Topo->nbProc , FTI_Topo->nodeSize);
+        fflush(stdout);
         FTI_Print("Number of ranks is not a multiple of the node size.", FTI_WARN);
         return FTI_NSCS;
     }

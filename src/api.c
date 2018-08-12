@@ -105,6 +105,9 @@ int FTI_Init(char* configFile, MPI_Comm globalComm)
     FTI_Exec.globalComm = globalComm;
     MPI_Comm_rank(FTI_Exec.globalComm, &FTI_Topo.myRank);
     MPI_Comm_size(FTI_Exec.globalComm, &FTI_Topo.nbProc);
+    FTI_get_topo(&FTI_Topo);
+    fprintf(stdout, "Size returned by MPI_Comm_size: %d\n", FTI_Topo.nbProc);
+    fflush(stdout);
     snprintf(FTI_Conf.cfgFile, FTI_BUFS, "%s", configFile);
     FTI_Conf.verbosity = 1; //Temporary needed for output in FTI_LoadConf.
     FTI_Exec.initSCES = 0;
@@ -1032,6 +1035,7 @@ int FTI_Recover()
 /*-------------------------------------------------------------------------*/
 int FTI_Snapshot()
 {
+    FTI_Print("Got in FTI_Snapshot", FTI_DBUG);
     if (FTI_Exec.initSCES == 0) {
         FTI_Print("FTI is not initialized.", FTI_WARN);
         return FTI_NSCS;
@@ -1046,23 +1050,32 @@ int FTI_Snapshot()
         }
     }
     else { // If it is a checkpoint test
+        FTI_Print("Checking if this is a checkpoint test", FTI_DBUG);
         res = FTI_SCES;
+        FTI_Print("Going into UpdateIterTime", FTI_DBUG);
+        fflush(stdout);
         FTI_UpdateIterTime(&FTI_Exec);
+        FTI_Print("After FTI_UpdateIterTime", FTI_DBUG);
+        fflush(stdout);
         if (FTI_Exec.ckptNext == FTI_Exec.ckptIcnt) { // If it is time to check for possible ckpt. (every minute)
             FTI_Print("Checking if it is time to checkpoint.", FTI_DBUG);
             if (FTI_Exec.globMeanIter > 60) {
+                FTI_Print("Doing first IF", FTI_DBUG);
                 FTI_Exec.minuteCnt = FTI_Exec.totalIterTime/60;
             }
             else {
+                FTI_Print("Incrementing minute counter", FTI_DBUG);
                 FTI_Exec.minuteCnt++; // Increment minute counter
             }
             for (i = 1; i < 5; i++) { // Check ckpt. level
+                FTI_Print("Checking checkpoint level", FTI_DBUG);
                 if (FTI_Ckpt[i].ckptIntv > 0 && FTI_Exec.minuteCnt/(FTI_Ckpt[i].ckptCnt*FTI_Ckpt[i].ckptIntv)) {
                     level = i;
                     FTI_Ckpt[i].ckptCnt++;
                 }
             }
             if (level != -1) {
+                FTI_Print("Trying to take checkpoint", FTI_DBUG);
                 res = FTI_Try(FTI_Checkpoint(FTI_Exec.ckptCnt, level), "take checkpoint.");
                 if (res == FTI_DONE) {
                     FTI_Exec.ckptCnt++;
@@ -1073,6 +1086,7 @@ int FTI_Snapshot()
             FTI_Exec.iterTime = MPI_Wtime(); // Reset iteration duration timer
         }
     }
+    FTI_Print("Leaving snapshot", FTI_DBUG);
     return res;
 }
 

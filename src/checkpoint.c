@@ -59,17 +59,33 @@
 /*-------------------------------------------------------------------------*/
 int FTI_UpdateIterTime(FTIT_execution* FTI_Exec)
 {
+    FTI_Print("Getting inside FTI_UpdateIterTime", FTI_DBUG);
+    fflush(stdout);
     int nbProcs, res;
     char str[FTI_BUFS];
     double last = FTI_Exec->iterTime;
     FTI_Exec->iterTime = MPI_Wtime();
+    FTI_Print("About to check if FTI_Exec", FTI_DBUG);
+    fflush(stdout);
     if (FTI_Exec->ckptIcnt > 0) {
+        FTI_Print("Inside the if FTI_Exec", FTI_DBUG);
+        fflush(stdout);
         FTI_Exec->lastIterTime = FTI_Exec->iterTime - last;
         FTI_Exec->totalIterTime = FTI_Exec->totalIterTime + FTI_Exec->lastIterTime;
         if (FTI_Exec->ckptIcnt % FTI_Exec->syncIter == 0) {
+            FTI_Print("Inside the if now", FTI_DBUG);
+            fflush(stdout);
             FTI_Exec->meanIterTime = FTI_Exec->totalIterTime / FTI_Exec->ckptIcnt;
+            FTI_Print("About to call MPI_Allreduce", FTI_DBUG);
+            fflush(stdout);
             MPI_Allreduce(&FTI_Exec->meanIterTime, &FTI_Exec->globMeanIter, 1, MPI_DOUBLE, MPI_SUM, FTI_COMM_WORLD);
+            FTI_Print("After MPI_Allreduce", FTI_DBUG);
+            fflush(stdout);
+            FTI_Print("MPI_comm_size", FTI_DBUG);
+            fflush(stdout);
             MPI_Comm_size(FTI_COMM_WORLD, &nbProcs);
+            FTI_Print("After MPI_comm_size", FTI_DBUG);
+            fflush(stdout);
             FTI_Exec->globMeanIter = FTI_Exec->globMeanIter / nbProcs;
             if (FTI_Exec->globMeanIter > 60) {
                 FTI_Exec->ckptIntv = 1;
@@ -84,6 +100,8 @@ int FTI_UpdateIterTime(FTIT_execution* FTI_Exec)
             if (res >= FTI_Exec->ckptIcnt) {
                 FTI_Exec->ckptNext = res;
             }
+            FTI_Print("Just checking if things got here", FTI_DBUG);
+            fflush(stdout);
             snprintf(str, FTI_BUFS, "Current iter : %d ckpt intv. : %d . Next ckpt. at iter. %d . Sync. intv. : %d",
                     FTI_Exec->ckptIcnt, FTI_Exec->ckptIntv, FTI_Exec->ckptNext, FTI_Exec->syncIter);
             FTI_Print(str, FTI_DBUG);
